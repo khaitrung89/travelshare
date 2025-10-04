@@ -1,0 +1,229 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/trip_expense_splitter/nextjs_space/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// NextAuth Models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  password      String
+  image         String?
+  username      String?   @unique
+  bio           String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  tripMembers   TripMember[]
+  posts         Post[]
+  invitesSent   Invite[]  @relation("InvitedBy")
+  notifications Notification[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Trip Models
+model Trip {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  location      String?
+  startDate     DateTime?
+  endDate       DateTime?
+  currency      String    @default("VND")
+  uniqueLink    String    @unique @default(cuid())
+  discoverable  Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  members       TripMember[]
+  expenses      Expense[]
+  transfers     Transfer[]
+  invites       Invite[]
+  posts         Post[]
+}
+
+enum TripRole {
+  owner
+  member
+}
+
+model TripMember {
+  id          String    @id @default(cuid())
+  tripId      String
+  userId      String
+  role        TripRole  @default(member)
+  createdAt   DateTime  @default(now())
+  
+  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  paidExpenses        Expense[]       @relation("Payer")
+  expenseShares       ExpenseShare[]
+  transfersFrom       Transfer[]      @relation("FromMember")
+  transfersTo         Transfer[]      @relation("ToMember")
+  
+  @@unique([tripId, userId])
+  @@index([tripId])
+  @@index([userId])
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  description String
+  amount      Decimal   @db.Decimal(12, 2)
+  date        DateTime  @default(now())
+  payerId     String
+  tripId      String
+  createdAt   DateTime  @default(now())
+  
+  trip        Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  payer       TripMember    @relation("Payer", fields: [payerId], references: [id], onDelete: Cascade)
+  shares      ExpenseShare[]
+  
+  @@index([tripId])
+  @@index([payerId])
+  @@index([date])
+}
+
+model ExpenseShare {
+  id           String     @id @default(cuid())
+  expenseId    String
+  memberId     String
+  shareAmount  Decimal    @db.Decimal(12, 2)
+  
+  expense      Expense    @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  member       TripMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  
+  @@unique([expenseId, memberId])
+  @@index([expenseId])
+  @@index([memberId])
+}
+
+model Transfer {
+  id            String     @id @default(cuid())
+  tripId        String
+  fromMemberId  String
+  toMemberId    String
+  amount        Decimal    @db.Decimal(12, 2)
+  createdAt     DateTime   @default(now())
+  
+  trip          Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromMember    TripMember @relation("FromMember", fields: [fromMemberId], references: [id], onDelete: Cascade)
+  toMember      TripMember @relation("ToMember", fields: [toMemberId], references: [id], onDelete: Cascade)
+  
+  @@index([tripId])
+  @@index([fromMemberId])
+  @@index([toMemberId])
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+model Invite {
+  id              String        @id @default(cuid())
+  tripId          String
+  email           String
+  token           String        @unique @default(cuid())
+  status          InviteStatus  @default(pending)
+  expiresAt       DateTime
+  invitedByUserId String
+  createdAt       DateTime      @default(now())
+  
+  trip            Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  invitedBy       User          @relation("InvitedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  
+  @@index([tripId])
+  @@index([token])
+  @@index([email])
+}
+
+model Post {
+  id            String    @id @default(cuid())
+  tripId        String
+  userId        String
+  content       String?
+  mediaUrl      String?
+  durationSec   Int?
+  shareToExplore Boolean  @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  trip          Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([tripId])
+  @@index([userId])
+  @@index([shareToExplore, createdAt])
+}
+
+enum NotificationType {
+  trip_invite
+  expense_added
+  transfer_recorded
+}
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  type        NotificationType
+  title       String
+  message     String
+  tripId      String?
+  inviteId    String?
+  read        Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
