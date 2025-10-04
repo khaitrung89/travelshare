@@ -71,7 +71,7 @@ export default async function ProfilePage({ params }: { params: { username: stri
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {user.tripMembers.map((membership) => (
+              {user.tripMembers.map((membership: any) => (
                 <a
                   key={membership.id}
                   href={`/trips/${membership.trip.id}`}
